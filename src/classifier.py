@@ -3,61 +3,76 @@ import time
 from dotenv import load_dotenv
 from openai import OpenAI
 
-# Load API token securely from environment variable
 load_dotenv()
-api_token = os.getenv("HF_API_TOKEN")
 
-if api_token is None:
-    raise ValueError("Hugging Face API token not found. Make sure it's set in your .env file.")
+# --- Provider registry: everything that differs between backends lives here ---
+PROVIDERS = {
+    "mistral": {
+        "base_url": "https://api.mistral.ai/v1",
+        "env_key":  "MISTRAL_API_TOKEN",
+        "headers":  {},
+    },
+    "apertus": {
+        "base_url": "https://api.publicai.co/v1",
+        "env_key":  "PUBLICAI_API_TOKEN",
+        "headers":  {"User-Agent": "ttcb-classifier/1.0"},  # required by Public AI
+    },
+}
 
-# Set up OpenAI-compatible Hugging Face endpoint
-client = OpenAI(
-    base_url="https://router.huggingface.co/novita/v3/openai",
-    api_key=api_token,
-)
+_clients = {}  # cache one client per provider
 
-def classify_project(title, description, context, role, tool="TT", delay=0.5):
-    """
-    Calls the Hugging Face API to classify a single project based on context and role.
-
-    Args:
-        title (str): Project title.
-        description (str): Project description.
-        context (str): User prompt context with definition + examples.
-        role (str): System role prompt.
-        tool (str): "TT" or "CB" (used for debugging/logging).
-        delay (float): Optional delay to avoid rate limits.
-
-    Returns:
-        str: Model response ("1" or "0")
-    """
-    prompt = (
-        context +
-        f"Project Title: {title}\n"
-        f"Project Description: {description}"
-    )
-    try:
-        response = client.chat.completions.create(
-            model="meta-llama/llama-3.3-70b-instruct",
-            messages=[
-                {"role": "system", "content": role},
-                {"role": "user", "content": prompt},
-            ],
-            max_tokens=200,
-            temperature=0.2,
-            stream=False,
+def get_client(provider):
+    if provider not in PROVIDERS:
+        raise ValueError(f"Unknown provider '{provider}'. Choose from {list(PROVIDERS)}.")
+    if provider not in _clients:
+        cfg = PROVIDERS[provider]
+        token = os.getenv(cfg["env_key"])
+        if token is None:
+            raise ValueError(f"{cfg['env_key']} not found in .env for provider '{provider}'.")
+        _clients[provider] = OpenAI(
+            base_url=cfg["base_url"],
+            api_key=token,
+            default_headers=cfg["headers"],
         )
-        output = response.choices[0].message.content.strip()
+    return _clients[provider]
 
-        # Optional: enforce numeric output
-        # if output not in {"0", "1"}:
-        #    print(f"⚠️ Unexpected output for {tool}: '{output}' — defaulting to '0'")
-        #    return "0"
 
-        return output
-
-    except Exception as e:
-        print(f"Error while classifying {tool} for project '{title}': {e}")
-        return "0"
-    finally:
-        time.sleep(delay)
+def classify_project(title, description, context, role, tool="TT",
+                     provider="mistral", model="mistral-small-latest",
+                     delay=1.5, max_retries=5):
+    """
+    Classify one project via the chosen provider. Returns "1", "0", or None.
+    None = genuine API/parse failure (never coerced to 0).
+    """
+    client = get_client(provider)
+    prompt = context + f"Project Title: {title}\nProject Description: {description}"
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": role},
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=5,
+                temperature=0,
+                stream=False,
+            )
+            output = response.choices[0].message.content.strip()
+            time.sleep(delay)
+            if output.startswith("1"):
+                return "1"
+            if output.startswith("0"):
+                return "0"
+            print(f"⚠️ Unparseable {tool} output for '{title}': '{output}'")
+            return None
+        except Exception as e:
+            msg = str(e).lower()
+            if "429" in msg or "rate limit" in msg:
+                wait = 2 ** attempt
+                print(f"  ⏳ rate limited, waiting {wait}s ({attempt+1}/{max_retries})")
+                time.sleep(wait)
+                continue
+            print(f"Error classifying {tool} for '{title}': {e}")
+            return None
+    return None
