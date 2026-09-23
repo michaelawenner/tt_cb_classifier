@@ -24,24 +24,20 @@ def load_projects(filepath="data/ClimateData_2023_2024.csv"):
 
 
 def load_definitions(filepath="data/Definitions.xlsx"):
-    """
-    Load short and detailed definitions for Technology Transfer (TT) and Capacity Building (CB).
-    Returns a dictionary with combined definitions.
-    """
     df_short = pd.read_excel(filepath, sheet_name="Definitions")
     df_detailed = pd.read_excel(filepath, sheet_name="Definition_Detail", header=None)
 
     cb_main = df_short[df_short["Tool"] == "CB"]["Definition"].iloc[0]
     tt_main = df_short[df_short["Tool"] == "TT"]["Definition"].iloc[0]
 
-    cb_details = df_detailed[df_detailed.iloc[:, 0] == "CB"].iloc[:, 1].str.cat(sep=" // ")
-    tt_details = df_detailed[df_detailed.iloc[:, 0] == "TT"].iloc[:, 1].str.cat(sep=" // ")
+    def format_details(tool):
+        rows = df_detailed[df_detailed.iloc[:, 0] == tool].iloc[:, 1].tolist()
+        return "\n".join(f"- {r}" for r in rows)
 
     definitions = {
-        "CB": f"{cb_main} Projects can promote: {cb_details}",
-        "TT": f"{tt_main} Projects can promote: {tt_details}"
+        "CB": f"{cb_main}\n\nProjects can promote:\n{format_details('CB')}",
+        "TT": f"{tt_main}\n\nProjects can promote:\n{format_details('TT')}",
     }
-
     return definitions
 
 

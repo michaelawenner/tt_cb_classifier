@@ -6,9 +6,9 @@ from src.evaluate import evaluate_predictions
 
 # --- CONFIGURATION ---
 TEST_ID = 1
-NUM_EXAMPLES = 9           # few-shot examples in prompt     
-NUM_TEST_CASES = 91         # Number of test rows to classify
-OUTPUT_PATH = f"results/test_{TEST_ID}.csv"
+NUM_EXAMPLES = 14           # few-shot examples in prompt     
+NUM_TEST_CASES = 90         # Number of test rows to classify (34 for dev, 90 for full test set)
+OUTPUT_PATH = f"results/dev_{TEST_ID}.csv"
 PRED_TT_COL = f"is_technology_transfer_{TEST_ID}"
 PRED_CB_COL = f"is_capacity_building_{TEST_ID}"
 
@@ -29,7 +29,7 @@ context_tt, role_tt, context_cb, role_cb = build_prompts(train_df, definitions, 
 print("🚀 Classifying test set...")
 
 MODELS = {
-    #"small-4": ("mistral,","mistral-small-latest", 1.5),
+    "small-4": ("mistral","mistral-small-latest", 1.5),
     #"large-3": ("mistral","mistral-large-latest", 15.0),
     "apertus": ("apertus","swiss-ai/apertus-v1.5-70b", 1)
 }
